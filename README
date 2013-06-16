@@ -1,3 +1,18 @@
+*** This is a port of TinyWM to the programming language Céu 
+    (www.ceu-lang.org).
+
+Files:
+
+    Makefile:   modified Makefile with a "ceu" target
+    main.c:     code entry point
+    tinywm.ceu: the code
+
+Compile:
+
+    % make ceu
+
+*** ORIGINAL DESCRIPTION BELOW ***
+
 TinyWM is written by Nick Welch <nick@incise.org> in 2005 & 2011.
 
 This software is in the public domain and is provided AS IS, with NO WARRANTY.
