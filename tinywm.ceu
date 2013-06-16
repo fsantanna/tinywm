@@ -9,7 +9,6 @@
 
 native do
     #include <X11/Xlib.h>
-
     #define MAX(a, b) ((a) > (b) ? (a) : (b))
 end
 
@@ -32,12 +31,9 @@ finalize
 with
     _XCloseDisplay(dpy);
 end
-
 if not dpy then
     return 1;
 end
-
-input _XEvent* XEVENT;
 
 _XGrabKey(dpy, _XKeysymToKeycode(dpy, _XStringToKeysym("F1")), _Mod1Mask,
           _DefaultRootWindow(dpy), _True, _GrabModeAsync, _GrabModeAsync);
@@ -51,6 +47,7 @@ _XGrabButton(dpy, 3, _Mod1Mask, _DefaultRootWindow(dpy), _True,
              _GrabModeAsync, _GrabModeAsync, _None, _None);
 
 par do
+    input _XEvent* XEVENT;
     loop do
         async(dpy) do
             var _XEvent ev;
@@ -94,6 +91,7 @@ with
                     dx = 0;
                     dy = 0;
                 end
+
                 _XMoveResizeWindow(dpy, start.subwindow,
                     attr.x + x,
                     attr.y + y,
