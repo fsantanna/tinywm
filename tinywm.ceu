@@ -1,0 +1,109 @@
+/* TinyWM is written by Nick Welch <nick@incise.org> in 2005 & 2011.
+ *
+ * This software is in the public domain
+ * and is provided AS IS, with NO WARRANTY.
+ *
+ * This version is written in Céu (http://www.ceu-lang.org)
+ *      by Francisco Sant'Anna <francisco.santanna@gmail.com> in 2013.
+ */
+
+native do
+    #include <X11/Xlib.h>
+
+    #define MAX(a, b) ((a) > (b) ? (a) : (b))
+end
+
+native nohold
+    _XCloseDisplay(),
+    _DefaultRootWindow(),
+    _XGetWindowAttributes(),
+    _XGrabButton(),
+    _XGrabKey(),
+    _XNextEvent(),
+    _XRaiseWindow(),
+    _XMoveResizeWindow();
+
+native pure
+    _XKeysymToKeycode();
+
+var _Display*           dpy;
+finalize
+    dpy = _XOpenDisplay(0);
+with
+    _XCloseDisplay(dpy);
+end
+
+if not dpy then
+    return 1;
+end
+
+input _XEvent* XEVENT;
+
+_XGrabKey(dpy, _XKeysymToKeycode(dpy, _XStringToKeysym("F1")), _Mod1Mask,
+          _DefaultRootWindow(dpy), _True, _GrabModeAsync, _GrabModeAsync);
+
+_XGrabButton(dpy, 1, _Mod1Mask, _DefaultRootWindow(dpy), _True,
+             _ButtonPressMask|_ButtonReleaseMask|_PointerMotionMask, 
+             _GrabModeAsync, _GrabModeAsync, _None, _None);
+
+_XGrabButton(dpy, 3, _Mod1Mask, _DefaultRootWindow(dpy), _True,
+             _ButtonPressMask|_ButtonReleaseMask|_PointerMotionMask, 
+             _GrabModeAsync, _GrabModeAsync, _None, _None);
+
+par do
+    loop do
+        async(dpy) do
+            var _XEvent ev;
+            _XNextEvent(dpy, &ev);
+            emit XEVENT => &ev;
+        end
+    end
+with
+    loop do
+        var _XEvent* ev;
+        ev = await XEVENT until
+                ev:type==_KeyPress and ev:xkey.subwindow!=_None;
+        _XRaiseWindow(dpy, ev:xkey.subwindow);
+    end
+with
+    loop do
+        var _XEvent* ev;
+        ev = await XEVENT until
+                ev:type==_ButtonPress and ev:xbutton.subwindow!=_None;
+
+        var _XButtonEvent start = ev:xbutton;
+        var _XWindowAttributes attr;
+            _XGetWindowAttributes(dpy, ev:xbutton.subwindow, &attr);
+
+        par/or do
+            loop do
+                ev = await XEVENT until
+                        ev:type==_MotionNotify and start.subwindow!=_None;
+
+                var int xdiff = ev:xbutton.x_root - start.x_root;
+                var int ydiff = ev:xbutton.y_root - start.y_root;
+                var int x,y, dx,dy;
+                if start.button == 1 then
+                    x  = 0;
+                    y  = 0;
+                    dx = xdiff;
+                    dy = ydiff;
+                else
+                    x  = xdiff;
+                    y  = ydiff;
+                    dx = 0;
+                    dy = 0;
+                end
+                _XMoveResizeWindow(dpy, start.subwindow,
+                    attr.x + x,
+                    attr.y + y,
+                    _MAX(1, attr.width  + dx),
+                    _MAX(1, attr.height + dy)
+                );
+            end
+        with
+            ev = await XEVENT until
+                ev:type == _ButtonRelease;
+        end
+    end
+end
