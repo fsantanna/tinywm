@@ -1,0 +1,190 @@
+/* TinyWM is written by Nick Welch <nick@incise.org> in 2005 & 2011.
+ * TinyWM-XCB is rewritten by Ping-Hsun Chen <penkia@gmail.com>, 2010.
+ *
+ * This software is in the public domain
+ * and is provided AS IS, with NO WARRANTY.
+ *
+ * This version is written in Céu (http://www.ceu-lang.org)
+ *      by Francisco Sant'Anna <francisco.santanna@gmail.com> in 2013.
+ */
+
+native do
+    #include <X11/keysym.h>
+    #include <xcb/xcb.h>
+    #include <xcb/xcb_keysyms.h>
+
+    #define EVT(ev) (ev->response_type & ~0x80)
+
+    /* code from <https://github.com/Cloudef/monsterwm-xcb> */
+    xcb_keycode_t* xxcb_get_keycodes(xcb_connection_t* dis, xcb_keysym_t keysym)
+    {
+        xcb_key_symbols_t *keysyms;
+        xcb_keycode_t     *keycode;
+        if (!(keysyms = xcb_key_symbols_alloc(dis)))
+            return NULL;
+        keycode = xcb_key_symbols_get_keycode(keysyms, keysym);
+        xcb_key_symbols_free(keysyms);
+        return keycode;
+    }
+end
+
+native pure
+    _EVT(),
+    _printf(),
+    _xcb_connection_has_error(),
+    _xcb_get_setup();
+
+native nohold
+    _xcb_configure_window(),
+    _xcb_disconnect(),
+    _xcb_get_geometry(),
+    _xcb_get_geometry_reply(),
+    _xcb_grab_button(),
+    _xcb_grab_pointer(),
+    _xcb_grab_pointer_reply(),
+    _xcb_grab_key(),
+    _xcb_flush(),
+    _xcb_query_pointer(),
+    _xcb_query_pointer_reply(),
+    _xcb_setup_roots_iterator(),
+    _xcb_ungrab_pointer(),
+    _xcb_wait_for_event(),
+    _xxcb_get_keycodes();
+
+var _xcb_connection_t* con;
+    finalize
+        con = _xcb_connect(null, null);
+    with
+        _xcb_disconnect(con);
+    end
+    if _xcb_connection_has_error(con) then
+        return 1;
+    end
+
+var _xcb_screen_t* screen =
+    _xcb_setup_roots_iterator(_xcb_get_setup(con)).data;
+
+do
+    var _xcb_keycode_t* keycode := _xxcb_get_keycodes(con, _XK_F1);
+                                // TODO: ???
+    loop i do
+        if keycode[i] == _XCB_NO_SYMBOL then
+            break;
+        end
+        _xcb_grab_key(con, 1, screen:root, _XCB_MOD_MASK_1, keycode[i],
+             _XCB_GRAB_MODE_ASYNC, _XCB_GRAB_MODE_ASYNC);
+    end
+
+    _xcb_grab_button(con, 0, screen:root,
+         _XCB_EVENT_MASK_BUTTON_PRESS | _XCB_EVENT_MASK_BUTTON_RELEASE,
+         _XCB_GRAB_MODE_ASYNC, _XCB_GRAB_MODE_ASYNC,
+         screen:root, _XCB_NONE, 1, _XCB_MOD_MASK_1);
+
+    _xcb_grab_button(con, 0, screen:root,
+         _XCB_EVENT_MASK_BUTTON_PRESS | _XCB_EVENT_MASK_BUTTON_RELEASE,
+         _XCB_GRAB_MODE_ASYNC, _XCB_GRAB_MODE_ASYNC,
+         screen:root, _XCB_NONE, 3, _XCB_MOD_MASK_1);
+
+    _xcb_flush(con);
+end
+
+par do
+    input _xcb_generic_event_t* XCB_EVENT;
+    async (con) do
+        loop do
+            var _xcb_generic_event_t* ev := _xcb_wait_for_event(con);
+                                   // ev should not be held anywhere
+            emit XCB_EVENT => ev;
+        end
+    end
+with
+    loop do
+        var _xcb_generic_event_t* ev;
+        ev = await XCB_EVENT until
+                _EVT(ev) == _XCB_KEY_PRESS;
+        var u32[1] values;
+            values[0] = _XCB_STACK_MODE_ABOVE;
+        _xcb_configure_window(con, kev:child,
+                              _XCB_CONFIG_WINDOW_STACK_MODE, values);
+        _xcb_flush(con);
+    end
+with
+    var _xcb_generic_event_t*       ev;
+    var _xcb_button_press_event_t*  bev;
+    var _xcb_motion_notify_event_t* mev;
+
+    loop do
+        ev = await XCB_EVENT until
+                _EVT(ev) == _XCB_BUTTON_PRESS;
+        bev = (_xcb_button_press_event_t*) ev;
+
+        _xcb_grab_pointer_reply(con,
+            _xcb_grab_pointer(con, 0, screen:root,
+                _XCB_EVENT_MASK_BUTTON_PRESS  | _XCB_EVENT_MASK_BUTTON_RELEASE |
+                _XCB_EVENT_MASK_BUTTON_MOTION | _XCB_EVENT_MASK_POINTER_MOTION,
+                _XCB_GRAB_MODE_ASYNC, _XCB_GRAB_MODE_ASYNC,
+                _XCB_NONE, _XCB_NONE, _XCB_CURRENT_TIME),
+            null);
+        finalize with
+            _xcb_ungrab_pointer(con, _XCB_CURRENT_TIME);
+            _xcb_flush(con);
+        end
+
+        // clicked window
+        var _xcb_drawable_t win = bev:child;
+        if not win then
+            continue;
+        end
+
+        // initial mouse position
+        var int sx = bev:event_x;
+        var int sy = bev:event_y;
+        var int bt = bev:detail;    // 1=left, 3=right
+
+        // initial window position
+        var _xcb_get_geometry_reply_t* geom := // i'm not holding it
+                _xcb_get_geometry_reply(con,
+                    _xcb_get_geometry(con, win), null);
+        var int x = geom:x;
+        var int y = geom:y;
+        var int w = geom:width;
+        var int h = geom:height;
+
+        par/or do
+            ev = await XCB_EVENT until
+                _EVT(ev) != _XCB_MOTION_NOTIFY;
+        with
+            loop do
+                ev = await XCB_EVENT until
+                        _EVT(ev) == _XCB_MOTION_NOTIFY;
+                mev = (_xcb_motion_notify_event_t*) ev;
+/*
+                _printf("(%d %d) => (%d %d)\n", sx,sy,
+                                                mev:event_x,mev:event_y);
+*/
+                _xcb_query_pointer_reply(con,
+                    _xcb_query_pointer(con, screen:root), 0);
+
+                // offset from the first click
+                var int dx = mev:event_x - sx;
+                var int dy = mev:event_y - sy;
+
+                var u32[2] values;
+                if bt == 1 then         // left: move
+                    values[0] = x + dx;
+                    values[1] = y + dy;
+                    _xcb_configure_window(con, win,
+                        _XCB_CONFIG_WINDOW_X | _XCB_CONFIG_WINDOW_Y,
+                        values);
+                else/if bt == 3 then    // right: resize
+                    values[0] = w + dx;
+                    values[1] = h + dy;
+                    _xcb_configure_window(con, win,
+                        _XCB_CONFIG_WINDOW_WIDTH | _XCB_CONFIG_WINDOW_HEIGHT,
+                        values);
+                end
+                _xcb_flush(con);
+            end
+        end
+    end
+end

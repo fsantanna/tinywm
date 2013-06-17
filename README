@@ -3,13 +3,16 @@
 
 Files:
 
-    Makefile:   modified Makefile with a "ceu" target
-    main.c:     code entry point
-    tinywm.ceu: the code
+    Makefile:       modified Makefile with a "ceu" and "xcb-ceu" target
+    main.c:         code entry point
+    tinywm.ceu:     the Xlib code
+    tinywm-xcb.ceu: the XCB  code
 
 Compile:
 
     % make ceu
+or
+    % make xcb-ceu
 
 *** ORIGINAL DESCRIPTION BELOW ***
 
