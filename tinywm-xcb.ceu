@@ -104,7 +104,7 @@ with
                 _EVT(ev) == _XCB_KEY_PRESS;
         var u32[1] values;
             values[0] = _XCB_STACK_MODE_ABOVE;
-        _xcb_configure_window(con, kev:child,
+        _xcb_configure_window(con, ((_xcb_key_press_event_t*)ev):child,
                               _XCB_CONFIG_WINDOW_STACK_MODE, values);
         _xcb_flush(con);
     end
